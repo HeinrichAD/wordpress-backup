@@ -37,7 +37,7 @@ fi
 # create backup
 # ------------------------------------------
 
-TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-'+%Y%m%d'}")"
+TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-+%Y%m%d}")"
 BACKUP_FILES_CREDENTIALS="${BACKUP_FILES_UID:-$(id -u)}:${BACKUP_FILES_GID:-$(id -g)}"
 BACKUP_NAME="backup_$TIMESTAMP"
 
