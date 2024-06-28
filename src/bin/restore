@@ -1,0 +1,116 @@
+#!/bin/bash
+
+# SPDX-FileCopyrightText: 2015 Angelo Veltens <angelo.veltens@online.de>
+#
+# SPDX-License-Identifier: MIT
+
+set -e
+set -o pipefail
+
+# import utils
+LOG_SOURCE_NAME="Restore"
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
+
+# check required environment variables
+# ------------------------------------------
+
+# required to update wp-config.php
+host="$(get_env MYSQL_ENV_MYSQL_HOST)"
+port="$(gen_env MYSQL_PORT_3306_TCP_PORT 3306)"
+database="$(get_env MYSQL_ENV_MYSQL_DATABASE)"
+user="$(get_env MYSQL_ENV_MYSQL_USER)"
+password="$(get_env MYSQL_ENV_MYSQL_PASSWORD)"
+
+
+# check backup files
+# ------------------------------------------
+
+function is_file_readable() {
+  local file="$1"
+  if [ -r "$file" ]; then
+    # 0 = true
+    return 0
+  else
+    # 1 = false
+    return 1
+  fi
+}
+
+# check if backup file name is provided and valid
+BACKUP_NAME="$1"
+if ! [[ "$BACKUP_NAME" ]]; then
+  log_error "Backup name missing: Please specify a backup name, e.g. 'restore backup_20141104-030001'"
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
+if ! [[ "$BACKUP_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  log_error "The given backup name does not match the expected pattern: only characters, digits, underscore and dash are allowed ([a-zA-Z0-9_-])."
+  echo 'Finished: FAILURE' >&2
+  exit 1
+fi
+
+# check if HTML backup archive file can be found and is readable
+if is_file_readable "/backup/${BACKUP_NAME}.tar.gz"; then
+  RESTORE_NAME="/backup/$BACKUP_NAME"
+elif is_file_readable "/backup/backup_${BACKUP_NAME}.tar.gz"; then
+  RESTORE_NAME="/backup/backup_$BACKUP_NAME"
+else
+  log_error "HTML backup archive file missing or not readable: ${RESTORE_NAME}.tar.gz"
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
+
+# check if database backup archive file can be found and is readable
+if is_file_readable "${RESTORE_NAME}.sql.bz2"; then
+  log_error "Database backup file missing or not readable: ${RESTORE_NAME}.sql.bz2"
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
+
+FILES_ARCHIVE="${RESTORE_NAME}.tar.gz"
+SQL_ARCHIVE="${RESTORE_NAME}.sql.bz2"
+
+
+# restoring backup
+# ------------------------------------------
+
+TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-'+%Y%m%d'}")"
+
+# temporary backup current html folder
+cp /var/www/html/wp-config.php /tmp/wp-config.php
+mv /var/www/html "/var/www/html-${TIMESTAMP}.bak"
+mkdir -m 755 /var/www/html
+chown www-data:www-data /var/www/html
+
+# restore files
+log_info "restoring files from $FILES_ARCHIVE to /var/www/html"
+tar -xzf "${FILES_ARCHIVE}" --directory="/var/www/html/"
+chown -R www-data:www-data /var/www/html
+
+# update wp-config.php
+sed -i s/"define('DB_NAME', '.*');"/"define('DB_NAME', '$database');"/g /var/www/html/wp-config.php
+sed -i s/"define('DB_USER', '.*');"/"define('DB_USER', '$user');"/g /var/www/html/wp-config.php
+sed -i s/"define('DB_PASSWORD', '.*');"/"define('DB_PASSWORD', '$password');"/g /var/www/html/wp-config.php
+sed -i s/"define('DB_HOST', '.*');"/"define('DB_HOST', '$host:$port');"/g /var/www/html/wp-config.php
+
+# restore database
+# note: host, user and password are stored in /etc/mysql/conf.d/mysqlpassword.cnf
+log_info "restoring data from mysql dump file $SQL_ARCHIVE"
+if ! bunzip2 < "${SQL_ARCHIVE}" | mysql "${MYSQL_ENV_MYSQL_DATABASE}"; then
+  log_error "failed to restore data from mysql dump file $SQL_ARCHIVE"
+  # revert: restore temporary backup
+  log_error "restoring temporary backup"
+  mv /tmp/wp-config.php /var/www/html/wp-config.php
+  rm -rf /var/www/html
+  mv "/var/www/html-${TIMESTAMP}.bak" /var/www/html
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
+
+# clean up temporary backup
+rm /tmp/wp-config.php
+rm -rf "/var/www/html-${TIMESTAMP}.bak"
+
+log_info "Backup successfully restored"
+echo 'Finished: SUCCESS'

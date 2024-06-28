@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# SPDX-FileCopyrightText: 2015 Angelo Veltens <angelo.veltens@online.de>
+#
+# SPDX-License-Identifier: MIT
+
+set -e
+set -o pipefail
+
+# import utils
+LOG_SOURCE_NAME="Backup"
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
+
+# check requirements
+# ------------------------------------------
+
+check_env MYSQL_ENV_MYSQL_DATABASE
+if ! [ -r "/etc/mysql/conf.d/mysqlpassword.cnf" ]; then
+  log_error "/etc/mysql/conf.d/mysqlpassword.cnf is not a readable file"
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
+
+
+# cleanup old backups
+# ------------------------------------------
+
+if [ -n "$CLEANUP_OLDER_THAN" ]; then
+  log_info "Cleanup backup older than $CLEANUP_OLDER_THAN days"
+  to_be_remove=$(find /backups/ -type f -not -name ".*" -mtime "+$CLEANUP_OLDER_THAN" | wc -l)
+  log_info "Will try to remove $to_be_remove files"
+  find /backups/ -type f -not -name ".*" -mtime "+$CLEANUP_OLDER_THAN" -exec rm {} \;
+fi
+
+
+# create backup
+# ------------------------------------------
+
+TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-'+%Y%m%d'}")"
+BACKUP_FILES_CREDENTIALS="${BACKUP_FILES_UID:-$(id -u)}:${BACKUP_FILES_GID:-$(id -g)}"
+BACKUP_NAME="backup_$TIMESTAMP"
+
+# creating html backup
+log_info "creating backup archive of /var/www/html"
+tar --create --gzip -vv --directory="/var/www/html/" --file="/backups/${BACKUP_NAME}.tar.gz" "./"
+
+# creating database backup
+# note: host, user and password are stored in /etc/mysql/conf.d/mysqlpassword.cnf
+log_info "creating database dump"
+mysqldump --add-drop-table --no-tablespaces "$MYSQL_ENV_MYSQL_DATABASE" --single-transaction --column-statistics=0 | bzip2 -c > "/backups/${BACKUP_NAME}.sql.bz2"
+
+# backup files credentails
+log_info "changing ownership of backup files"
+chown "$BACKUP_FILES_CREDENTIALS" "/backups/${BACKUP_NAME}.tar.gz"
+chown "$BACKUP_FILES_CREDENTIALS" "/backups/${BACKUP_NAME}.sql.bz2"
+
+log_info "backup files /backups/${BACKUP_NAME}.{tar.gz,sql.bz2} created"
+echo "Finished: SUCCESS"
