@@ -48,7 +48,11 @@ tar --create --gzip -vv --directory="/var/www/html/" --file="/backups/${BACKUP_N
 # creating database backup
 # note: host, user and password are stored in /etc/mysql/conf.d/mysqlpassword.cnf
 log_info "creating database dump"
-mysqldump --add-drop-table --no-tablespaces "$MYSQL_ENV_MYSQL_DATABASE" --single-transaction --column-statistics=0 | bzip2 -c > "/backups/${BACKUP_NAME}.sql.bz2"
+if ! mysqldump --add-drop-table --no-tablespaces "$MYSQL_ENV_MYSQL_DATABASE" --single-transaction --column-statistics=0 | bzip2 -c > "/backups/${BACKUP_NAME}.sql.bz2"; then
+  log_error "failed to create mysql dump file ${BACKUP_NAME}.sql.bz2"
+  echo "Finished: FAILURE" >&2
+  exit 1
+fi
 
 # backup files credentails
 log_info "changing ownership of backup files"

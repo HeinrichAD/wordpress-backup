@@ -20,7 +20,10 @@ def container(client, image):
             'MYSQL_ENV_MYSQL_DATABASE=test_db',
             'MYSQL_ENV_MYSQL_PASSWORD=test_password',
             'BACKUP_TIME=1 2 3 4 5',
-            'CLEANUP_OLDER_THAN=100'
+            'BACKUP_TIMESTAMP=--rfc-3339=seconds',
+            'CLEANUP_OLDER_THAN=100',
+            'BACKUP_FILES_UID=1001',
+            'BACKUP_FILES_GID=1002',
         ]
     )
     yield container
@@ -34,7 +37,10 @@ def test_environment(host):
     assert "MYSQL_ENV_MYSQL_DATABASE=test_db" in env
     assert "MYSQL_ENV_MYSQL_PASSWORD=test_password" in env
     assert "BACKUP_TIME=1 2 3 4 5" in env
+    assert "BACKUP_TIMESTAMP=--rfc-3339=seconds" in env
     assert "CLEANUP_OLDER_THAN=100" in env
+    assert "BACKUP_FILES_UID=1001" in env
+    assert "BACKUP_FILES_GID=1002" in env
 
 
 def test_mysql_configuration(host):
@@ -55,4 +61,10 @@ password="test_password"
 
 
 def test_crontab(host):
-    assert host.check_output("crontab -l") == "1 2 3 4 5 backup > /backups/last-backup.log 2>&1"
+    assert host.check_output("crontab -l") == \
+        """MYSQL_ENV_MYSQL_DATABASE="test_db"
+CLEANUP_OLDER_THAN="100"
+BACKUP_TIMESTAMP="--rfc-3339=seconds"
+BACKUP_FILES_UID="1001"
+BACKUP_FILES_GID="1002"
+1 2 3 4 5 backup > /backups/last-backup.log 2>&1"""

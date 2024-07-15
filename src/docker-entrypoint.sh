@@ -24,8 +24,22 @@ check_env MYSQL_ENV_MYSQL_PASSWORD
 
 if ! [ -f backup-cron ] && [ -n "$BACKUP_TIME" ]; then
   log_info "Creating cron entry to start backup at: $BACKUP_TIME"
+
+  db_name="$(get_env MYSQL_ENV_MYSQL_DATABASE)"
+
+  # create and register cron job
+  echo "MYSQL_ENV_MYSQL_DATABASE=\"$db_name\"" > /backup-cron
+  [ -n "$CLEANUP_OLDER_THAN" ] && echo "CLEANUP_OLDER_THAN=\"$CLEANUP_OLDER_THAN\"" >> /backup-cron
+  [ -n "$BACKUP_TIMESTAMP" ] && echo "BACKUP_TIMESTAMP=\"$BACKUP_TIMESTAMP\"" >> /backup-cron
+  [ -n "$BACKUP_FILES_UID" ] && echo "BACKUP_FILES_UID=\"$BACKUP_FILES_UID\"" >> /backup-cron
+  [ -n "$BACKUP_FILES_GID" ] && echo "BACKUP_FILES_GID=\"$BACKUP_FILES_GID\"" >> /backup-cron
   echo "$BACKUP_TIME backup > /backups/last-backup.log 2>&1" >> /backup-cron
   crontab /backup-cron
+
+  # create log file with correct permissions
+  credentials="${BACKUP_FILES_UID:-$(id -u)}:${BACKUP_FILES_GID:-$(id -g)}"
+  touch /backups/last-backup.log
+  chown "$credentials" /backups/last-backup.log
 fi
 
 log_info "Current crontab:"
@@ -35,6 +49,8 @@ crontab -l
 # configure MySQLDump settings
 # ------------------------------------------
 
+db_host="$(get_env MYSQL_ENV_MYSQL_HOST)"
+db_user="$(get_env MYSQL_ENV_MYSQL_USER)"
 db_password="$(get_env MYSQL_ENV_MYSQL_PASSWORD)"
 
 log_info "Creating MySQLDump configuration file"
@@ -43,14 +59,14 @@ chmod 600 /etc/mysql/conf.d/mysqlpassword.cnf
 cat <<-EOF > /etc/mysql/conf.d/mysqlpassword.cnf
 ; backup settings
 [mysqldump]
-host="$MYSQL_ENV_MYSQL_HOST"
-user="$MYSQL_ENV_MYSQL_USER"
+host="$db_host"
+user="$db_user"
 password="$db_password"
 
 ; restore settings
 [mysql]
-host="$MYSQL_ENV_MYSQL_HOST"
-user="$MYSQL_ENV_MYSQL_USER"
+host="$db_host"
+user="$db_user"
 password="$db_password"
 EOF
 

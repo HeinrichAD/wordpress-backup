@@ -78,7 +78,6 @@ SQL_ARCHIVE="${RESTORE_NAME}.sql.bz2"
 TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-+%Y%m%d}")"
 
 # temporary backup current html folder
-cp /var/www/html/wp-config.php /tmp/wp-config.php
 mv /var/www/html "/var/www/html-${TIMESTAMP}.bak"
 mkdir -m 755 /var/www/html
 chown www-data:www-data /var/www/html
@@ -101,7 +100,6 @@ if ! bunzip2 < "${SQL_ARCHIVE}" | mysql "${MYSQL_ENV_MYSQL_DATABASE}"; then
   log_error "failed to restore data from mysql dump file $SQL_ARCHIVE"
   # revert: restore temporary backup
   log_error "restoring temporary backup"
-  mv /tmp/wp-config.php /var/www/html/wp-config.php
   rm -rf /var/www/html
   mv "/var/www/html-${TIMESTAMP}.bak" /var/www/html
   echo "Finished: FAILURE" >&2
@@ -109,7 +107,6 @@ if ! bunzip2 < "${SQL_ARCHIVE}" | mysql "${MYSQL_ENV_MYSQL_DATABASE}"; then
 fi
 
 # clean up temporary backup
-rm /tmp/wp-config.php
 rm -rf "/var/www/html-${TIMESTAMP}.bak"
 
 log_info "Backup successfully restored"

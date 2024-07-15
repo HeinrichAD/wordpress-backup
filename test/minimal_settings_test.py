@@ -59,4 +59,6 @@ password="test_password"
 
 
 def test_default_crontab(host):
-    assert host.check_output("crontab -l") == "0 3 * * * backup > /backups/last-backup.log 2>&1"
+    assert host.check_output("crontab -l") == \
+        """MYSQL_ENV_MYSQL_DATABASE="test_db"
+0 3 * * * backup > /backups/last-backup.log 2>&1"""
