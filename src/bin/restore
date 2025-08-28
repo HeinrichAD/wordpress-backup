@@ -17,7 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 # required to update wp-config.php
 host="$(get_env MYSQL_ENV_MYSQL_HOST)"
-port="$(gen_env MYSQL_PORT_3306_TCP_PORT 3306)"
+port="$(get_env MYSQL_PORT_3306_TCP_PORT 3306)"
 database="$(get_env MYSQL_ENV_MYSQL_DATABASE)"
 user="$(get_env MYSQL_ENV_MYSQL_USER)"
 password="$(get_env MYSQL_ENV_MYSQL_PASSWORD)"
@@ -51,18 +51,18 @@ if ! [[ "$BACKUP_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
 fi
 
 # check if HTML backup archive file can be found and is readable
-if is_file_readable "/backup/${BACKUP_NAME}.tar.gz"; then
-  RESTORE_NAME="/backup/$BACKUP_NAME"
-elif is_file_readable "/backup/backup_${BACKUP_NAME}.tar.gz"; then
-  RESTORE_NAME="/backup/backup_$BACKUP_NAME"
+if is_file_readable "/backups/${BACKUP_NAME}.tar.gz"; then
+  RESTORE_NAME="/backups/$BACKUP_NAME"
+elif is_file_readable "/backups/backup_${BACKUP_NAME}.tar.gz"; then
+  RESTORE_NAME="/backups/backup_$BACKUP_NAME"
 else
-  log_error "HTML backup archive file missing or not readable: ${RESTORE_NAME}.tar.gz"
+  log_error "HTML backup archive file missing or not readable: ${BACKUP_NAME}.tar.gz"
   echo "Finished: FAILURE" >&2
   exit 1
 fi
 
 # check if database backup archive file can be found and is readable
-if is_file_readable "${RESTORE_NAME}.sql.bz2"; then
+if ! is_file_readable "${RESTORE_NAME}.sql.bz2"; then
   log_error "Database backup file missing or not readable: ${RESTORE_NAME}.sql.bz2"
   echo "Finished: FAILURE" >&2
   exit 1
@@ -78,8 +78,10 @@ SQL_ARCHIVE="${RESTORE_NAME}.sql.bz2"
 TIMESTAMP="$(date "${BACKUP_TIMESTAMP:-+%Y%m%d}")"
 
 # temporary backup current html folder
-mv /var/www/html "/var/www/html-${TIMESTAMP}.bak"
-mkdir -m 755 /var/www/html
+mkdir "/var/www/html-${TIMESTAMP}.bak"
+shopt -s dotglob
+find /var/www/html/* -maxdepth 0 -exec mv {} "/var/www/html-${TIMESTAMP}.bak/" \;
+shopt -u dotglob
 chown www-data:www-data /var/www/html
 
 # restore files
@@ -100,8 +102,11 @@ if ! bunzip2 < "${SQL_ARCHIVE}" | mysql "${MYSQL_ENV_MYSQL_DATABASE}"; then
   log_error "failed to restore data from mysql dump file $SQL_ARCHIVE"
   # revert: restore temporary backup
   log_error "restoring temporary backup"
-  rm -rf /var/www/html
-  mv "/var/www/html-${TIMESTAMP}.bak" /var/www/html
+  shopt -s dotglob
+  find /var/www/html/* -maxdepth 0 -exec rm -rf {} \;
+  find /var/www/html-${TIMESTAMP}.bak/* -maxdepth 0 -exec mv {} "/var/www/html/" \;
+  shopt -u dotglob
+  rm -rf /var/www/html-${TIMESTAMP}.bak
   echo "Finished: FAILURE" >&2
   exit 1
 fi
